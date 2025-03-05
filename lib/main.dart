@@ -104,7 +104,6 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
           }
 
           lista = lista.sublist(0, lista.length - 2);
-
           
           if (lista.length >= 7) {
             String lastSevenData = lista.sublist(lista.length - 7).join('');
@@ -112,7 +111,6 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
             ref.read(pesoValueProvider.notifier).state = number.toString();
           } 
           ref.read(characteristicValueProvider.notifier).state = lista;
-
 
       }, onError: (dynamic error) {
         // code to handle errors
@@ -127,8 +125,6 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
 
   @override
   Widget build(BuildContext context) {
-
-
     return Scaffold(
       appBar: AppBar(
         title: Text('Bluetooth LE Example'),
