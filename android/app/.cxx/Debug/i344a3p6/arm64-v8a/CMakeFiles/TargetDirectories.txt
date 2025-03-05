@@ -1,0 +1,2 @@
+H:/PROGRAMAS FLUTTER/Bluetooth_le_flutter/android/app/.cxx/Debug/i344a3p6/arm64-v8a/CMakeFiles/edit_cache.dir
+H:/PROGRAMAS FLUTTER/Bluetooth_le_flutter/android/app/.cxx/Debug/i344a3p6/arm64-v8a/CMakeFiles/rebuild_cache.dir

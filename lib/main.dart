@@ -1,12 +1,12 @@
 import 'dart:convert';
 
+import 'package:bluetooth_lowenwrgy/providers/peso_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 void main() {
-  
   runApp(
     ProviderScope(child: MyApp()),
   );
@@ -21,23 +21,23 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class BluetoothScreen extends StatefulWidget {
+class BluetoothScreen extends ConsumerStatefulWidget {
   @override
   _BluetoothScreenState createState() => _BluetoothScreenState();
 }
 
-class _BluetoothScreenState extends State<BluetoothScreen> {
+class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
   final flutterReactiveBle = FlutterReactiveBle();
   DiscoveredDevice? connectedDevice;
+  List<DiscoveredDevice> devices = [];
   List<DiscoveredService> services = [];
   Map<String, List<int>> characteristicValues = {};
-  String _peso= "";
+ 
 
   @override
   void initState() {
     super.initState();
     requestPermissions();
-   
   }
 
   void requestPermissions() async {
@@ -54,11 +54,11 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   void startScan() {
     flutterReactiveBle.scanForDevices(withServices: []).listen((device) {
-      //print('${device.name} found! rssi: ${device.rssi}');
-      if (device.name == "BleSeriaPort") {
-        //flutterReactiveBle. stopScan();
-        connectToDevice(device);
-      }
+      setState(() {
+        if (!devices.any((d) => d.id == device.id)) {
+          devices.add(device);
+        }
+      });
     });
   }
 
@@ -70,30 +70,53 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
           connectedDevice = device;
         });
         discoverServices(device.id);
+        
       }
     });
   }
 
   void discoverServices(String deviceId) async {
     services = await flutterReactiveBle.discoverServices(deviceId);
-    setState(() {
-      print(services);
-    });
+    final notifiableCharacteristic = services
+        .expand((service) => service.characteristics)
+        .firstWhere((characteristic) => characteristic.isNotifiable);
+
+    if (notifiableCharacteristic != null) {
+      readCharacteristic(QualifiedCharacteristic(
+        serviceId: notifiableCharacteristic.serviceId,
+        characteristicId: notifiableCharacteristic.characteristicId,
+        deviceId: deviceId,
+      ), ref);
+      Navigator.push(context,MaterialPageRoute(builder: (context) => CharacteristicScreen()));
+    } else {
+      print('No notifiable characteristic found');
+    }
   }
-  
-  void readCharacteristic(QualifiedCharacteristic characteristic) async {
+
+  void readCharacteristic(QualifiedCharacteristic characteristic, WidgetRef ref) async {
+    String value = '';
+    List<String> lista = []; 
     try {
       flutterReactiveBle.subscribeToCharacteristic(characteristic).listen((data) {
-      setState(() {
-         final value = utf8.decode(data); 
-         _peso = value;
-        characteristicValues[characteristic.characteristicId.toString()] = data;
+          lista = [];
+          for (int i = 1; i < data.length; i++) {
+            lista.add( String.fromCharCode(data[i]));
+          }
+
+          lista = lista.sublist(0, lista.length - 2);
+
+          
+          if (lista.length >= 7) {
+            String lastSevenData = lista.sublist(lista.length - 7).join('');
+            double number = double.parse(lastSevenData);
+            ref.read(pesoValueProvider.notifier).state = number.toString();
+          } 
+          ref.read(characteristicValueProvider.notifier).state = lista;
+
+
+      }, onError: (dynamic error) {
+        // code to handle errors
       });
-    }, onError: (dynamic error) {
-      // code to handle errors
-    });
-     // final value = await flutterReactiveBle.readCharacteristic(characteristic);
-     
     } catch (e) {
       print('Error reading characteristic: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,44 +127,53 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   @override
   Widget build(BuildContext context) {
+
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Bluetooth LE Example'),
       ),
       body: connectedDevice == null
-          ? Center(child: CircularProgressIndicator())
-          : ListView(
-              children: services
-                  .map((service) => ExpansionTile(
-                        title: Text(service.serviceId.toString()),
-                        children: service.characteristics
-                            .map((characteristic) => ListTile(
-                                  title: Text(characteristic.characteristicId.toString()),
-                                  onTap: () {
-                                    if (characteristic.isReadable) {
-                                      readCharacteristic(QualifiedCharacteristic(
-                                        serviceId: service.serviceId,
-                                        characteristicId: characteristic.characteristicId,
-                                        deviceId: connectedDevice!.id,
-                                      ));
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Characteristic not readable')),
-                                      );
-                                    }
-                                  },
-                                  subtitle: Column(
-                                    children: [
-                                      Text('PESO : $_peso'),
-                                      Text(characteristicValues[characteristic.characteristicId.toString()]?.toString() ?? 'Tap to read value'),
-                                      Text('LENGTH : ${characteristicValues[characteristic.characteristicId.toString()]?.length.toString()}'),
-                                    ],
-                                  ),
-                                ))
-                            .toList(),
-                      ))
-                  .toList(),
-            ),
+          ? ListView.builder(
+              itemCount: devices.length,
+              itemBuilder: (context, index) {
+                final device = devices[index];
+                return Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10.0),
+                  ),
+                  child: ListTile(
+                    title: Text(device.name),
+                    subtitle: Text(device.id),
+                    onTap: () {
+                      connectToDevice(device);
+                      
+                      //Navigator.push(context,MaterialPageRoute(builder: (context) => CharacteristicScreen()));
+                    },
+                  ),
+                );
+              },
+            )
+          : Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class CharacteristicScreen extends ConsumerWidget {
+
+
+  CharacteristicScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final peso = ref.watch(pesoValueProvider);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Characteristic Value'),
+      ),
+      body: Center(
+        child: Text(peso, style: TextStyle(fontSize: 30),),
+      ),
     );
   }
 }
