@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:bluetooth_lowenwrgy/pages/services_screen.dart';
 import 'package:bluetooth_lowenwrgy/providers/peso_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
@@ -77,20 +78,12 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
 
   void discoverServices(String deviceId) async {
     services = await flutterReactiveBle.discoverServices(deviceId);
-    final notifiableCharacteristic = services
-        .expand((service) => service.characteristics)
-        .firstWhere((characteristic) => characteristic.isNotifiable);
-
-    if (notifiableCharacteristic != null) {
-      readCharacteristic(QualifiedCharacteristic(
-        serviceId: notifiableCharacteristic.serviceId,
-        characteristicId: notifiableCharacteristic.characteristicId,
-        deviceId: deviceId,
-      ), ref);
-      Navigator.push(context,MaterialPageRoute(builder: (context) => CharacteristicScreen()));
-    } else {
-      print('No notifiable characteristic found');
-    }
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => ServicesScreen(services: services, deviceId: deviceId),
+    ),
+  );
   }
 
   void readCharacteristic(QualifiedCharacteristic characteristic, WidgetRef ref) async {
