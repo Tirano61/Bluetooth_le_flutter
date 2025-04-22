@@ -1,4 +1,4 @@
-# bluetooth_lowenwrgy
+# bluetooth_lowenergy
 
 A new Flutter project.
 
