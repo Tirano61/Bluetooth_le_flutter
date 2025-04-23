@@ -55,7 +55,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   void startScan() {
     flutterReactiveBle.scanForDevices(withServices: []).listen((device) {
       //print('${device.name} found! rssi: ${device.rssi}');
-      if (device.name == "BleSeriaPort") {
+      if (device.name == "BALANZAS_HOOK") {
         //flutterReactiveBle. stopScan();
         connectToDevice(device);
       }
@@ -90,6 +90,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
         characteristicValues[characteristic.characteristicId.toString()] = data;
       });
     }, onError: (dynamic error) {
+      print(error);
       // code to handle errors
     });
      // final value = await flutterReactiveBle.readCharacteristic(characteristic);
@@ -116,9 +117,20 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                         title: Text(service.serviceId.toString()),
                         children: service.characteristics
                             .map((characteristic) => ListTile(
-                                  title: Text(characteristic.characteristicId.toString()),
+                                  title: Column(
+                                    children: [
+                                      Text(characteristic.characteristicInstanceId),
+                                      Text(characteristic.characteristicId.toString()),
+                                      Text('isIndicatable : '+characteristic.isIndicatable.toString()),
+                                      Text('isNotifiable : '+characteristic.isNotifiable.toString()),
+                                      Text('isReadable : '+characteristic.isReadable.toString()),
+                                      Text('isWritableWithResponse : '+ characteristic.isWritableWithResponse.toString()),
+                                      Text('isWritableWithoutResponse : '+ characteristic.isWritableWithoutResponse.toString()),
+                                   
+                                    ],
+                                  ),
                                   onTap: () {
-                                    if (characteristic.isReadable) {
+                                    if (characteristic.isNotifiable) {
                                       readCharacteristic(QualifiedCharacteristic(
                                         serviceId: service.serviceId,
                                         characteristicId: characteristic.characteristicId,
