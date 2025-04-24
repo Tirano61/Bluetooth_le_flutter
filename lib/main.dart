@@ -50,6 +50,14 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
       Permission.bluetoothAdvertise,
     ].request();
 
+    flutterReactiveBle.statusStream.listen((status) {
+      if (status == BleStatus.ready) {
+        print("****************** Bluetooth está listo *********************");
+      } else {
+        print("****************** Bluetooth no está listo: $status *********************");
+      }
+    });
+
     startScan();
   }
 
@@ -109,7 +117,7 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
         // code to handle errors
       });
     } catch (e) {
-      print('Error reading characteristic: $e');
+      //print('Error reading characteristic: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error reading characteristic: $e')),
       );
