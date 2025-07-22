@@ -43,3 +43,9 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+    implementation files('libs/LPAPI-2023-12-12-R.jar')
+    // ...otras dependencias existentes...
+}
