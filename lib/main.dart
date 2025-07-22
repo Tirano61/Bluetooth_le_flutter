@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:bluetooth_lowenwrgy/pages/services_screen.dart';
 import 'package:bluetooth_lowenwrgy/providers/peso_provider.dart';
@@ -31,9 +32,11 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
   final flutterReactiveBle = FlutterReactiveBle();
   DiscoveredDevice? connectedDevice;
   List<DiscoveredDevice> devices = [];
-  List<DiscoveredService> services = [];
+  List<Service> services = [];
   Map<String, List<int>> characteristicValues = {};
- 
+  StreamSubscription<ConnectionStateUpdate>? deviceConnection;
+  StreamSubscription<List<int>>? characteristicSubscription;
+  StreamSubscription<DiscoveredDevice>? scanSubscription;
 
   @override
   void initState() {
@@ -54,59 +57,121 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
   }
 
   void startScan() {
-    flutterReactiveBle.scanForDevices(withServices: []).listen((device) {
+    scanSubscription = flutterReactiveBle.scanForDevices(withServices: []).listen((device) {
       setState(() {
         if (!devices.any((d) => d.id == device.id)) {
           devices.add(device);
+          print('Dispositivo encontrado: ${device.name} (${device.id})');
         }
       });
     });
   }
 
   void connectToDevice(DiscoveredDevice device) async {
-    final connection = flutterReactiveBle.connectToDevice(id: device.id);
-    connection.listen((connectionState) {
-      if (connectionState.connectionState == DeviceConnectionState.connected) {
-        setState(() {
-          connectedDevice = device;
-        });
-        discoverServices(device.id);
-        
+    print('Intentando conectar a ${device.name} (${device.id})');
+    
+    // Cancelar conexión anterior
+    await deviceConnection?.cancel();
+
+    final connection = flutterReactiveBle.connectToDevice(
+      id: device.id,
+      connectionTimeout: Duration(seconds: 10),
+    );
+
+    deviceConnection = connection.listen((connectionState) {
+      print('Connection state: ${connectionState.connectionState}');
+      
+      switch (connectionState.connectionState) {
+        case DeviceConnectionState.connecting:
+          print('Conectando...');
+          break;
+        case DeviceConnectionState.connected:
+          print('¡Conectado exitosamente!');
+          setState(() {
+            connectedDevice = device;
+          });
+          // Solicitar MTU máximo inmediatamente después de conectar
+          _requestMaxMtu(device.id);
+          // Agregar un pequeño delay antes de descubrir servicios
+          Future.delayed(Duration(milliseconds: 1000), () {
+            discoverServices(device.id);
+          });
+          break;
+        case DeviceConnectionState.disconnecting:
+          print('Desconectando...');
+          break;
+        case DeviceConnectionState.disconnected:
+          print('Desconectado. Razón: ${connectionState.failure}');
+          setState(() {
+            connectedDevice = null;
+          });
+          break;
       }
+    }, onError: (error) {
+      print('Error de conexión: $error');
+      setState(() {
+        connectedDevice = null;
+      });
     });
   }
 
-  void discoverServices(String deviceId) async {
-    services = await flutterReactiveBle.discoverServices(deviceId);
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => ServicesScreen(services: services, deviceId: deviceId),
-    ),
-  );
+  Future<void> _requestMaxMtu(String deviceId) async {
+    try {
+      // Solicitar MTU máximo (hasta 517 bytes en Bluetooth LE)
+      final mtu = await flutterReactiveBle.requestMtu(deviceId: deviceId, mtu: 517);
+      print('MTU negociado: $mtu bytes');
+    } catch (e) {
+      print('Error al solicitar MTU: $e');
+    }
+  }
+
+  discoverServices(String deviceId) async {
+    try {
+      print('Iniciando descubrimiento de servicios para: $deviceId');
+      await flutterReactiveBle.discoverAllServices(deviceId);
+      
+      print('Servicios descubiertos, obteniendo lista...');
+      final discoveredServices = await flutterReactiveBle.getDiscoveredServices(deviceId);
+      services = discoveredServices;
+      
+      print('Se encontraron ${services.length} servicios');
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ServicesScreen(services: services, deviceId: deviceId),
+        ),
+      );
+    } catch (e) {
+      print('Error discovering services: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error discovering services: $e')),
+      );
+    }
   }
 
   void readCharacteristic(QualifiedCharacteristic characteristic, WidgetRef ref) async {
-    String value = '';
-    List<String> lista = []; 
+    List<String> lista = [];
     try {
-      flutterReactiveBle.subscribeToCharacteristic(characteristic).listen((data) {
-          lista = [];
-          for (int i = 1; i < data.length; i++) {
-            lista.add( String.fromCharCode(data[i]));
-          }
+      // Cancelar suscripción anterior si existe
+      await characteristicSubscription?.cancel();
+      
+      // Almacenar la nueva suscripción
+      characteristicSubscription = flutterReactiveBle.subscribeToCharacteristic(characteristic).listen((data) {
+        lista = [];
+        for (int i = 1; i < data.length; i++) {
+          lista.add(String.fromCharCode(data[i]));
+        }
 
-          lista = lista.sublist(0, lista.length - 2);
-          
-          if (lista.length >= 7) {
-            String lastSevenData = lista.sublist(lista.length - 7).join('');
-            double number = double.parse(lastSevenData);
-            ref.read(pesoValueProvider.notifier).state = number.toString();
-          } 
-          ref.read(characteristicValueProvider.notifier).state = lista;
+        lista = lista.sublist(0, lista.length - 2);
 
+        if (lista.length >= 7) {
+          String lastSevenData = lista.sublist(lista.length - 7).join('');
+          double number = double.parse(lastSevenData);
+          ref.read(pesoValueProvider.notifier).state = number.toString();
+        }
+        ref.read(characteristicValueProvider.notifier).state = lista;
       }, onError: (dynamic error) {
-        // code to handle errors
+        print('Characteristic error: $error');
       });
     } catch (e) {
       print('Error reading characteristic: $e');
@@ -114,6 +179,21 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
         SnackBar(content: Text('Error reading characteristic: $e')),
       );
     }
+  }
+
+  void disconnect() async {
+    await deviceConnection?.cancel();
+    setState(() {
+      connectedDevice = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    deviceConnection?.cancel();
+    characteristicSubscription?.cancel();
+    scanSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -136,8 +216,6 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
                     subtitle: Text(device.id),
                     onTap: () {
                       connectToDevice(device);
-                      
-                      //Navigator.push(context,MaterialPageRoute(builder: (context) => CharacteristicScreen()));
                     },
                   ),
                 );
@@ -149,8 +227,6 @@ class _BluetoothScreenState extends ConsumerState<BluetoothScreen> {
 }
 
 class CharacteristicScreen extends ConsumerWidget {
-
-
   CharacteristicScreen();
 
   @override
@@ -161,7 +237,10 @@ class CharacteristicScreen extends ConsumerWidget {
         title: Text('Characteristic Value'),
       ),
       body: Center(
-        child: Text(peso, style: TextStyle(fontSize: 30),),
+        child: Text(
+          peso,
+          style: TextStyle(fontSize: 30),
+        ),
       ),
     );
   }
